@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Random Dog Viewer — Dog CEO API</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root{
+      --bg:#f7f9fb; --card:#fff; --accent:#ff6b6b; --muted:#6b7280;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family:Inter,system-ui,Segoe UI,Roboto,Arial; background:var(--bg); color:#0b1220;
+      display:flex; align-items:flex-start; justify-content:center; padding:20px;
+    }
+    .wrap{width:100%; max-width:900px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    h1{margin:0;font-size:20px}
+    .controls{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+    button{background:var(--accent);color:#fff;border:none;padding:10px 12px;border-radius:8px;cursor:pointer;font-weight:700}
+    button.ghost{background:transparent;border:1px solid rgba(0,0,0,0.08);color:var(--muted);font-weight:600}
+    #main{display:grid;grid-template-columns: 1fr 320px; gap:18px; margin-top:16px}
+    .card{background:var(--card);padding:12px;border-radius:12px;box-shadow:0 8px 24px rgba(11,18,32,0.06)}
+    .preview{display:flex;flex-direction:column;align-items:center;gap:12px}
+    .preview img{max-width:100%;height:auto;border-radius:10px;display:block;box-shadow:0 8px 20px rgba(11,18,32,0.06)}
+    .meta{display:flex;gap:8px;align-items:center;width:100%;justify-content:space-between}
+    .muted{color:var(--muted);font-size:13px}
+    .gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;max-height:480px;overflow:auto;margin-top:8px}
+    .thumb{width:100%;aspect-ratio:1.2/1;overflow:hidden;border-radius:8px;display:block;object-fit:cover;border:1px solid rgba(0,0,0,0.04)}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+    input[type="number"]{padding:8px;border-radius:8px;border:1px solid #e6eef8;width:84px}
+    .small{font-size:13px;color:var(--muted)}
+    footer{margin-top:14px;text-align:center;color:var(--muted);font-size:13px}
+    @media(max-width:880px){#main{grid-template-columns:1fr} .gallery{grid-template-columns:repeat(3,1fr)}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Random Dog Viewer</h1>
+      <div class="small muted">Source: dog.ceo API (no auth)</div>
+    </header>
+
+    <div class="controls">
+      <button id="randomBtn">Fetch Random Dog</button>
+      <button id="multiBtn" class="ghost">Fetch Multiple</button>
+      <input id="multiCount" type="number" min="1" max="12" value="3" title="Number of dogs to fetch" />
+      <button id="clearBtn" class="ghost">Clear Gallery</button>
+      <div style="flex:1"></div>
+      <div id="status" class="small muted">Ready</div>
+    </div>
+
+    <div id="main">
+      <div class="card preview">
+        <div id="imageWrap" style="width:100%;display:flex;align-items:center;justify-content:center;min-height:220px">
+          <img id="dogImg" src="" alt="Random dog" style="max-height:520px;display:none">
+        </div>
+
+        <div class="meta" style="width:100%">
+          <div>
+            <div id="breed" style="font-weight:700">Click "Fetch Random Dog"</div>
+            <div id="sub" class="muted small">Breed info will appear here</div>
+          </div>
+          <div class="row">
+            <button id="copyBtn" class="ghost">Copy URL</button>
+            <button id="downloadBtn" class="ghost">Download</button>
+            <button id="openBtn" class="ghost">Open in new tab</button>
+          </div>
+        </div>
+
+        <div style="width:100%;margin-top:6px">
+          <div class="small muted">Tip: Use "Fetch Multiple" to populate the gallery.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-weight:700">Gallery</div>
+          <div class="small muted" id="count">0 images</div>
+        </div>
+
+        <div class="gallery" id="gallery"></div>
+      </div>
+    </div>
+
+    <footer class="muted">Built with ❤️ using <code>https://dog.ceo/api/breeds/image/random</code></footer>
+  </div>
+
+<script>
+(() => {
+  const API_RANDOM = 'https://dog.ceo/api/breeds/image/random';
+  const randomBtn = document.getElementById('randomBtn');
+  const multiBtn = document.getElementById('multiBtn');
+  const multiCount = document.getElementById('multiCount');
+  const clearBtn = document.getElementById('clearBtn');
+  const status = document.getElementById('status');
+  const dogImg = document.getElementById('dogImg');
+  const imageWrap = document.getElementById('imageWrap');
+  const breedEl = document.getElementById('breed');
+  const subEl = document.getElementById('sub');
+  const copyBtn = document.getElementById('copyBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const openBtn = document.getElementById('openBtn');
+  const gallery = document.getElementById('gallery');
+  const countEl = document.getElementById('count');
+
+  let galleryItems = []; // store URLs
+
+  function setStatus(txt, busy=false){
+    status.textContent = txt;
+  }
+
+  function parseBreedFromUrl(url){
+    // example url: https://images.dog.ceo/breeds/hound-afghan/n02088094_1003.jpg
+    try{
+      const parts = new URL(url).pathname.split('/');
+      // find 'breeds' segment
+      const idx = parts.findIndex(p => p === 'breeds');
+      if(idx >= 0 && parts.length > idx+1){
+        const breedPart = parts[idx+1]; // e.g., hound-afghan or boxer
+        const [breed, sub] = breedPart.split('-');
+        return { breed, sub: sub || null };
+      }
+    }catch(e){}
+    return {breed: 'Unknown', sub: null};
+  }
+
+  async function fetchRandom(){
+    setStatus('Fetching random dog...');
+    try{
+      const res = await fetch(API_RANDOM);
+      if(!res.ok) throw new Error(res.status + ' ' + res.statusText);
+      const json = await res.json();
+      if(json.status !== 'success') throw new Error('API responded with error');
+      const url = json.message;
+      showImage(url, true);
+      setStatus('Loaded');
+    } catch (err){
+      console.error(err);
+      setStatus('Error: ' + err.message);
+    }
+  }
+
+  function showImage(url, addToGallery=false){
+    dogImg.src = url;
+    dogImg.style.display = 'block';
+    // parse and display breed
+    const {breed, sub} = parseBreedFromUrl(url);
+    const prettyBreed = (sub ? `${capitalize(breed)} (${capitalize(sub)})` : capitalize(breed));
+    breedEl.textContent = prettyBreed;
+    subEl.textContent = url;
+    // wire copy/open/download actions
+    copyBtn.onclick = async () => {
+      try{
+        await navigator.clipboard.writeText(url);
+        setStatus('Copied URL to clipboard');
+      }catch(e){
+        alert('Copy failed: ' + (e && e.message));
+      }
+    };
+    openBtn.onclick = () => window.open(url, '_blank');
+    downloadBtn.onclick = () => {
+      // trigger download
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = url.split('/').pop();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    };
+    if(addToGallery) addGalleryItem(url);
+  }
+
+  function addGalleryItem(url){
+    galleryItems.unshift(url);
+    // limit gallery size to 24
+    if(galleryItems.length > 24) galleryItems = galleryItems.slice(0,24);
+    renderGallery();
+  }
+
+  function renderGallery(){
+    gallery.innerHTML = '';
+    galleryItems.forEach((u, i) => {
+      const img = document.createElement('img');
+      img.src = u;
+      img.className = 'thumb';
+      img.title = u;
+      img.loading = 'lazy';
+      img.onclick = () => showImage(u, false);
+      gallery.appendChild(img);
+    });
+    countEl.textContent = `${galleryItems.length} image${galleryItems.length!==1?'s':''}`;
+  }
+
+  // Fetch multiple random images (n parallel)
+  async function fetchMultiple(n){
+    const count = Math.min(Math.max(1, parseInt(n) || 1), 12);
+    setStatus('Fetching ' + count + ' images...');
+    try{
+      const promises = Array.from({length:count}, ()=> fetch(API_RANDOM).then(r => r.json()));
+      const results = await Promise.all(promises);
+      const urls = results.filter(r => r && r.status === 'success').map(r => r.message);
+      // show first in preview and add all to gallery
+      if(urls.length > 0){
+        showImage(urls[0], true);
+      }
+      urls.slice(1).forEach(u => addGalleryItem(u));
+      setStatus('Fetched ' + urls.length + ' images');
+    }catch(err){
+      console.error(err);
+      setStatus('Error: ' + err.message);
+    }
+  }
+
+  function clearGallery(){
+    galleryItems = [];
+    renderGallery();
+    setStatus('Gallery cleared');
+  }
+
+  function capitalize(s){ return String(s||'').replace(/(^|-)\w/g, m => m.toUpperCase()); }
+
+  // attach events
+  randomBtn.addEventListener('click', fetchRandom);
+  multiBtn.addEventListener('click', ()=> fetchMultiple(multiCount.value));
+  clearBtn.addEventListener('click', clearGallery);
+
+  // initial
+  setStatus('Ready');
+})();
+</script>
+</body>
+</html>
